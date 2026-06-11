@@ -1,0 +1,10 @@
+{
+  "num_runs": 180,
+  "num_questions": 60,
+  "systems": [
+    "A",
+    "B",
+    "C"
+  ],
+  "max_iterations": 3
+}

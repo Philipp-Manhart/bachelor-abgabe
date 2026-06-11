@@ -1,0 +1,610 @@
+{
+  "Aktives Portfolio": {
+    "aliases": [
+      "active portfolio",
+      "active book",
+      "laufendes portfolio",
+      "bestand"
+    ],
+    "description": "Contracts or accounts whose lifecycle status represents an active customer relationship.",
+    "formula": "Filter dim_contract_status.is_active_flag = TRUE.",
+    "date_basis": "Use the fact table's current contract_status_sk unless the question explicitly asks for historical status.",
+    "eligible_tables": [
+      "fact_leasing_contracts",
+      "fact_loan_contracts",
+      "fact_banking_accounts"
+    ],
+    "notes": "Join the relevant fact table to dim_contract_status via contract_status_sk."
+  },
+  "Ausfallquote": {
+    "aliases": [
+      "default rate",
+      "defaulted share",
+      "ausfallrate"
+    ],
+    "description": "Share of defaulted contracts among all considered contracts.",
+    "formula": "COUNT(CASE WHEN dim_contract_status.is_defaulted_flag THEN 1 END) / COUNT(contract_id)",
+    "date_basis": "Use the reporting period requested by the question.",
+    "eligible_tables": [
+      "fact_leasing_contracts",
+      "fact_loan_contracts"
+    ],
+    "exclusions": [
+      "Contracts cancelled before becoming effective."
+    ],
+    "notes": "Join to dim_contract_status and filter the relevant portfolio or reporting period explicitly."
+  },
+  "Available Balance": {
+    "aliases": [
+      "effective available balance",
+      "verfuegbarer betrag",
+      "verfuegbare liquiditaet"
+    ],
+    "description": "Account balance available after holds, disputes, compliance blocks, and limits.",
+    "formula": "fact_banking_accounts.available_balance_effective",
+    "date_basis": "Use snapshot_date_sk for time-window questions.",
+    "eligible_tables": [
+      "fact_banking_accounts"
+    ],
+    "notes": "Use this instead of current_balance_net when the question asks what is effectively available."
+  },
+  "Approved Overdraft Facility": {
+    "aliases": [
+      "approved overdraft facility",
+      "authorized overdraft",
+      "overdraft facility",
+      "approved credit line"
+    ],
+    "description": "An account snapshot with an approved authorized overdraft amount.",
+    "formula": "fact_banking_accounts.authorized_overdraft_limit_net > 0",
+    "date_basis": "Use snapshot_date_sk only when the question constrains account snapshots by time.",
+    "eligible_tables": [
+      "fact_banking_accounts"
+    ],
+    "notes": "Use authorized_overdraft_limit_net for the approved facility. Use available_balance_effective < 0 only for actual overdrawn state."
+  },
+  "Blocked Funds": {
+    "aliases": [
+      "blocked funds",
+      "blocked amount",
+      "account with blocked funds",
+      "holds",
+      "compliance block"
+    ],
+    "description": "Funds blocked on an account snapshot due to holds, disputes, or compliance restrictions.",
+    "formula": "fact_banking_accounts.blocked_amount_effective > 0",
+    "date_basis": "Use snapshot_date_sk only when the question constrains account snapshots by time.",
+    "eligible_tables": [
+      "fact_banking_accounts"
+    ],
+    "notes": "Use blocked_amount_effective for blocked funds. Do not substitute available_balance_effective unless the question asks for available balance."
+  },
+  "Business Customer": {
+    "aliases": [
+      "business customer",
+      "business customers",
+      "corporate customer",
+      "corporate customers",
+      "geschaeftskunde",
+      "geschaeftskunden"
+    ],
+    "description": "A corporate or business customer in the customer dimension.",
+    "formula": "dim_customer.customer_type_code = 'Corporate'",
+    "date_basis": "Use dim_customer.is_current_record = TRUE only when the question asks for current customers.",
+    "eligible_tables": [
+      "dim_customer"
+    ],
+    "notes": "In this synthetic warehouse, business customer wording maps to customer_type_code = 'Corporate'. Do not use the literal value 'Business' because it is not a generated customer_type_code."
+  },
+  "BEV Share": {
+    "aliases": [
+      "battery electric share",
+      "bev anteil",
+      "electric-only share",
+      "battery-electric vehicles"
+    ],
+    "description": "Share of vehicles with a battery-electric fuel type in the selected population.",
+    "formula": "COUNT(CASE WHEN dim_vehicle.fuel_type_code = 'BEV' THEN 1 END) / COUNT(*)",
+    "date_basis": "Use the related contract origination or start date when measuring financed vehicles in a period.",
+    "eligible_tables": [
+      "dim_vehicle",
+      "fact_leasing_contracts",
+      "fact_loan_contracts"
+    ],
+    "notes": "BEV is represented by dim_vehicle.fuel_type_code = 'BEV'. If the question says active contract portfolio, count distinct vehicles linked to active leasing or loan contracts via dim_contract_status.is_active_flag = TRUE."
+  },
+  "Cash Realization Rate": {
+    "aliases": [
+      "cash realization",
+      "cash collection realization",
+      "zahlungseingangsquote"
+    ],
+    "description": "Ratio of realized non-reversed gross cash receipts to planned gross cash due.",
+    "formula": "SUM(non_reversed fact_payment_transactions.amount_gross) / NULLIF(SUM(fact_contract_cashflows.amount_gross), 0)",
+    "date_basis": "Use due_date_sk for planned cashflows and value_date_sk for actual receipts unless the question constrains matured contracts.",
+    "eligible_tables": [
+      "fact_contract_cashflows",
+      "fact_payment_transactions"
+    ],
+    "exclusions": [
+      "Reversed payment transactions must not count as realized cash receipts."
+    ],
+    "notes": "In this synthetic warehouse, reversal rows are booked with the opposite sign of the original and point to it via reverses_payment_transaction_sk."
+  },
+  "Cash Realization After Reversals": {
+    "aliases": [
+      "cash realization after reversals",
+      "after accounting for signed reversals",
+      "reversal-adjusted cash realization",
+      "signed reversals"
+    ],
+    "description": "Cash realization where successful original inflows and signed reversal rows are both included to measure net realized cash after reversals.",
+    "formula": "SUM(successful original inflows plus signed reversal rows) / NULLIF(SUM(planned gross cashflows), 0)",
+    "date_basis": "Use due_date_sk for planned cashflows. Use value_date_sk of the original payment for receipt timing unless the question explicitly asks for reversal booking timing.",
+    "eligible_tables": [
+      "fact_contract_cashflows",
+      "fact_payment_transactions",
+      "dim_cashflow_type"
+    ],
+    "notes": "Use is_reversal_flag = FALSE for original successful inflows. Include is_reversal_flag = TRUE rows only when the question explicitly asks for signed reversals or reversal-adjusted accounting; reversal rows carry the opposite sign in amount_gross and reference the original via reverses_payment_transaction_sk."
+  },
+  "Cross-Product Cannibalization": {
+    "aliases": [
+      "cannibalization",
+      "cross product switch",
+      "lease to loan switch"
+    ],
+    "description": "Customers replacing an early-terminated lease with a new loan for the same vehicle model.",
+    "formula": "COUNT(*) where old lease early_termination_flag = TRUE, old and new model_name match, and lease actual_end date precedes loan origination date.",
+    "date_basis": "Compare fact_leasing_contracts.actual_end_date_sk with fact_loan_contracts.origination_date_sk.",
+    "eligible_tables": [
+      "fact_leasing_contracts",
+      "fact_loan_contracts",
+      "dim_vehicle"
+    ],
+    "notes": "Match by customer_sk and vehicle model, not by VIN, unless VIN is explicitly requested."
+  },
+  "Dealer Commission Paid": {
+    "aliases": [
+      "commission payout",
+      "dealer payout",
+      "haendlerprovision",
+      "broker commission"
+    ],
+    "description": "Net commission amount paid or planned for a dealer or broker.",
+    "formula": "SUM(COALESCE(fact_payment_transactions.amount_net, fact_contract_cashflows.commission_amount_net))",
+    "date_basis": "Use payment value date for paid commission; use cashflow due date for planned commission.",
+    "eligible_tables": [
+      "fact_contract_cashflows",
+      "fact_payment_transactions",
+      "dim_cashflow_type",
+      "dim_dealer"
+    ],
+    "notes": "Filter dim_cashflow_type.is_dealer_cashflow_flag = TRUE and is_fee_component_flag = TRUE."
+  },
+  "Dealer Legal Name": {
+    "aliases": [
+      "legal dealer name",
+      "legal names of dealers",
+      "registered dealer name"
+    ],
+    "description": "Registered legal entity name of a dealer or broker.",
+    "formula": "dim_dealer.legal_entity_name",
+    "eligible_tables": [
+      "dim_dealer"
+    ],
+    "notes": "Use dim_dealer.legal_entity_name when the question asks for legal names or registered legal entities; use dim_dealer.dealer_name only for commercial dealer names. Legal entity names can repeat across technical dealer records, so use DISTINCT when the requested output is legal names rather than dealer records."
+  },
+  "Dealer Risk Rating": {
+    "aliases": [
+      "internal dealer risk rating",
+      "dealer risk class",
+      "strongest internal risk rating",
+      "riskiest dealer rating"
+    ],
+    "description": "Internal dealer risk rating stored on the dealer dimension.",
+    "formula": "dim_dealer.risk_rating_code",
+    "eligible_tables": [
+      "dim_dealer"
+    ],
+    "notes": "Available generated values are LOW, MODERATE, ELEVATED, and HIGH. Risk severity increases in that order, so HIGH is the strongest or riskiest risk rating. Current dealer means dim_dealer.is_current_record = TRUE; do not add dealer_status_code = 'Active' unless the question explicitly says active dealer. Use categorical profiling when exact available values are uncertain."
+  },
+  "Customer Risk Class": {
+    "aliases": [
+      "customer risk class",
+      "risk class C",
+      "best risk class",
+      "riskiest customer class",
+      "underwriting risk class"
+    ],
+    "description": "Internal underwriting risk class stored on the customer dimension.",
+    "formula": "dim_customer.risk_class_code",
+    "eligible_tables": [
+      "dim_customer"
+    ],
+    "notes": "Generated values are A, B, C, D, and E. Risk severity increases alphabetically, so A is the best risk class and E is the riskiest. Use categorical profiling when exact available values are uncertain."
+  },
+  "Dormant Dealer": {
+    "aliases": [
+      "inactive originator",
+      "no originations",
+      "schlafender haendler"
+    ],
+    "description": "An active dealer that has not originated any leasing or loan contract in the requested period.",
+    "formula": "Active current dealer with no matching rows in fact_leasing_contracts or fact_loan_contracts for the period.",
+    "date_basis": "Use contract_start_date_sk for leasing and origination_date_sk for loans.",
+    "eligible_tables": [
+      "dim_dealer",
+      "fact_leasing_contracts",
+      "fact_loan_contracts"
+    ],
+    "notes": "Current active dealer means dim_dealer.is_current_record = TRUE and dealer_status_code = 'Active'."
+  },
+  "Durchschnittliche Vertragslaufzeit": {
+    "aliases": [
+      "average contract term",
+      "avg term",
+      "mittlere laufzeit"
+    ],
+    "description": "Average contractual term in months.",
+    "formula": "AVG(contract_term_months) for leasing or AVG(loan_term_months) for loans.",
+    "date_basis": "Use booking/start/origination date according to the requested portfolio.",
+    "eligible_tables": [
+      "fact_leasing_contracts",
+      "fact_loan_contracts"
+    ],
+    "notes": "The leasing and loan fact tables use different term column names."
+  },
+  "Effective Interest Rate": {
+    "aliases": [
+      "customer effective rate",
+      "effektivzins",
+      "apr"
+    ],
+    "description": "Customer-facing effective interest rate.",
+    "formula": "Use fact_leasing_contracts.interest_rate_effective for leasing and fact_loan_contracts.annual_percentage_rate_effective for loans.",
+    "date_basis": "Use the contract's origination, booking, or start date requested by the question.",
+    "eligible_tables": [
+      "fact_leasing_contracts",
+      "fact_loan_contracts"
+    ],
+    "notes": "Do not use nominal interest when the question asks for APR or effective customer rate. Loan book means the loan fact table population; add an active-status filter only when the question explicitly asks for active, current, performing, or active portfolio contracts."
+  },
+  "Early Termination Rate": {
+    "aliases": [
+      "early settlement rate",
+      "vorzeitige beendigung",
+      "early exit share"
+    ],
+    "description": "Share of contracts ended before scheduled maturity.",
+    "formula": "COUNT(CASE WHEN early_termination_flag THEN 1 END) / COUNT(*)",
+    "date_basis": "Use actual_end_date_sk for realized terminations unless the question asks by origination cohort.",
+    "eligible_tables": [
+      "fact_leasing_contracts",
+      "fact_loan_contracts"
+    ],
+    "notes": "Leasing and loan facts both expose early_termination_flag."
+  },
+  "Gross Financed Amount": {
+    "aliases": [
+      "gross funding",
+      "bruttofinanzierung",
+      "gross financed volume"
+    ],
+    "description": "Financed amount including taxes or fees.",
+    "formula": "SUM(financed_amount_gross)",
+    "date_basis": "Use booking_date_sk, contract_start_date_sk, or origination_date_sk as requested.",
+    "eligible_tables": [
+      "fact_leasing_contracts",
+      "fact_loan_contracts"
+    ],
+    "notes": "Use net financed amount only when the question explicitly asks for net."
+  },
+  "High-LTV Exposure": {
+    "aliases": [
+      "high ltv",
+      "over 100 percent ltv",
+      "ueberfinanzierung",
+      "loan-to-value above 100"
+    ],
+    "description": "Loan contracts whose effective loan-to-value ratio exceeds the benchmark's high-LTV threshold.",
+    "formula": "fact_loan_contracts.loan_to_value_effective > 0.8",
+    "date_basis": "Use loan origination date for period analysis.",
+    "eligible_tables": [
+      "fact_loan_contracts"
+    ],
+    "notes": "Ratios are stored as decimals; the synthetic benchmark uses 0.8 as the high-LTV cutoff because no generated loans exceed 1.0."
+  },
+  "Late Lease Installment": {
+    "aliases": [
+      "late lease installment",
+      "paid more than 15 days late",
+      "delayed lease installment",
+      "late-fee cash"
+    ],
+    "description": "A planned recurring lease cashflow paid after its due date, optionally linked to late-fee payment transactions.",
+    "formula": "Compare fact_contract_cashflows.due_date_sk with the matching payment value_date_sk for non-reversed payments linked by related_contract_cashflow_sk.",
+    "date_basis": "Use due_date_sk for the scheduled installment period and fact_payment_transactions.value_date_sk for the actual receipt date.",
+    "eligible_tables": [
+      "fact_contract_cashflows",
+      "fact_payment_transactions",
+      "dim_cashflow_type",
+      "dim_date"
+    ],
+    "notes": "Lease installments are recurring planned cashflows with related_leasing_contract_sk populated. Late-fee cash is represented by payment transactions classified as late fees, commonly transaction_type_code = 'LATE_FEE_COLLECTION', and should exclude reversal rows."
+  },
+  "Insurance Bundle Penetration": {
+    "aliases": [
+      "insurance bundle share",
+      "versicherungsbuendel",
+      "insurance attachment"
+    ],
+    "description": "Share or count of active products/contracts with an insurance bundle.",
+    "formula": "Filter dim_product.insurance_bundle_flag = TRUE.",
+    "date_basis": "Use product status or contract period depending on the question.",
+    "eligible_tables": [
+      "dim_product",
+      "fact_leasing_contracts",
+      "fact_loan_contracts"
+    ],
+    "notes": "Active product means dim_product.product_status_code = 'ACTIVE'."
+  },
+  "Maturity Cohort": {
+    "aliases": [
+      "matured contracts",
+      "faelligkeitskohorte",
+      "maturity bucket"
+    ],
+    "description": "Contracts whose scheduled maturity falls in the requested period.",
+    "formula": "Join maturity_date_sk to dim_date and filter the requested period.",
+    "date_basis": "Use maturity_date_sk.",
+    "eligible_tables": [
+      "fact_leasing_contracts",
+      "fact_loan_contracts"
+    ],
+    "notes": "Do not use actual_end_date_sk unless the question asks for actual endings."
+  },
+  "Missed Installment": {
+    "aliases": [
+      "missed payment",
+      "unpaid installment",
+      "ausgefallene rate",
+      "missed planned installment",
+      "missed planned loan installment"
+    ],
+    "description": "A planned recurring cashflow with no matching non-reversed payment transaction.",
+    "formula": "Recurring planned cashflow where NOT EXISTS non-reversed fact_payment_transactions linked by related_contract_cashflow_sk.",
+    "date_basis": "Use fact_contract_cashflows.due_date_sk for the missed month.",
+    "eligible_tables": [
+      "fact_contract_cashflows",
+      "fact_payment_transactions",
+      "dim_cashflow_type"
+    ],
+    "notes": "Recurring installments are identified through dim_cashflow_type.is_recurring_flag = TRUE. Consecutive missed calendar months are evaluated per customer unless the question explicitly says per contract."
+  },
+  "Net Current Balance": {
+    "aliases": [
+      "net balance",
+      "current account balance",
+      "kontosaldo netto"
+    ],
+    "description": "Net current balance value stored on account snapshot facts.",
+    "formula": "fact_banking_accounts.current_balance_net",
+    "date_basis": "Use snapshot_date_sk for explicit time-window, latest-snapshot, or as-of questions only.",
+    "eligible_tables": [
+      "fact_banking_accounts"
+    ],
+    "notes": "The word current is part of the measure name current_balance_net and does not by itself mean latest snapshot. For questions such as across all banking account snapshots or for customers with a channel, aggregate all matching snapshot rows unless the question explicitly asks for latest, current snapshot, as of a date, or one row per account. Do not substitute available_balance_effective unless the question asks for available funds."
+  },
+  "Neugeschaeftsvolumen": {
+    "aliases": [
+      "new business volume",
+      "new originations volume",
+      "new booked volume"
+    ],
+    "description": "Sum of financing volume for newly originated or booked contracts.",
+    "formula": "SUM(financed_amount_gross)",
+    "date_basis": "Use contract_start_date_sk for leasing and origination_date_sk for loans unless the question says booking date.",
+    "eligible_tables": [
+      "fact_leasing_contracts",
+      "fact_loan_contracts"
+    ],
+    "notes": "Use gross financed amount for the KPI unless the question explicitly asks for net new business."
+  },
+  "Outstanding Principal": {
+    "aliases": [
+      "open principal",
+      "remaining principal",
+      "ausstehender kapitalbetrag"
+    ],
+    "description": "Planned principal not yet settled by successful non-reversed payments.",
+    "formula": "SUM(fact_contract_cashflows.principal_component_net - COALESCE(non_reversed_paid_principal_net, 0))",
+    "date_basis": "Use due_date_sk for planned principal due periods.",
+    "eligible_tables": [
+      "fact_contract_cashflows",
+      "fact_payment_transactions"
+    ],
+    "exclusions": [
+      "Reversed payment transactions are not successful settlement."
+    ],
+    "notes": "Aggregate only payments with is_reversal_flag = FALSE by related_contract_cashflow_sk before subtracting from planned principal. When the question asks for principal scheduled in a period after successful payments are deducted, filter the planned cashflows by due_date_sk and subtract all successful payments linked to those cashflows; do not additionally constrain the payment value_date_sk unless the question asks when cash was received. Do not subtract reversal rows unless the question explicitly asks to account for signed reversal rows."
+  },
+  "Overdraft Exposure": {
+    "aliases": [
+      "overdrawn balance",
+      "negative available balance",
+      "ueberziehung"
+    ],
+    "description": "Accounts whose effective available balance is below zero.",
+    "formula": "fact_banking_accounts.available_balance_effective < 0",
+    "date_basis": "Use snapshot_date_sk.",
+    "eligible_tables": [
+      "fact_banking_accounts"
+    ],
+    "notes": "For authorized overdraft limits use authorized_overdraft_limit_net; for actual overdrawn state use available_balance_effective."
+  },
+  "Overdraft Run": {
+    "aliases": [
+      "longest overdraft run",
+      "consecutive overdrawn days",
+      "crossed into overdraft",
+      "crossed from positive available balance into overdraft",
+      "ueberziehungsserie"
+    ],
+    "description": "Consecutive account snapshot days where available balance is below zero after an account crosses from positive available balance into overdraft.",
+    "formula": "Find accounts with LAG(available_balance_effective) > 0 and available_balance_effective < 0, then segment all negative available_balance_effective snapshots by account and count each consecutive overdrawn segment.",
+    "date_basis": "Order fact_banking_accounts snapshots by snapshot_date_sk joined to dim_date.full_date.",
+    "eligible_tables": [
+      "fact_banking_accounts",
+      "dim_date"
+    ],
+    "notes": "Use available_balance_effective < 0 for overdraft state. To calculate the longest run, group consecutive negative snapshot rows into segments; non-negative rows break a segment. The crossing condition selects eligible accounts, but the longest run is the maximum negative segment length for each eligible account."
+  },
+  "Payment Reversal Rate": {
+    "aliases": [
+      "reversal rate",
+      "storno zahlungen",
+      "payment cancellation rate"
+    ],
+    "description": "Share of original non-reversed inflow amount that was later reversed.",
+    "formula": "SUM(reversal.amount_gross) / NULLIF(SUM(original.amount_gross), 0)",
+    "date_basis": "Use original payment value_date_sk unless the question asks for reversal booking date.",
+    "eligible_tables": [
+      "fact_payment_transactions",
+      "dim_cashflow_type"
+    ],
+    "notes": "Use ABS(reversal.amount_gross) when reporting the share of original inflow value that was reversed."
+  },
+  "Plan-Ist-Zinsabweichung": {
+    "aliases": [
+      "planned actual interest variance",
+      "planned-versus-actual gross interest variance",
+      "gross interest variance",
+      "interest variance",
+      "zinsabweichung"
+    ],
+    "description": "Difference between planned gross interest and actually settled non-reversed gross interest.",
+    "formula": "SUM(fact_contract_cashflows.interest_component_gross) - SUM(non_reversed fact_payment_transactions.interest_component_gross)",
+    "date_basis": "Use due_date_sk for planned interest and value_date_sk for actual interest.",
+    "eligible_tables": [
+      "fact_contract_cashflows",
+      "fact_payment_transactions"
+    ],
+    "notes": "Compare gross interest components, not total payment amounts. For retail loan questions, join fact_loan_contracts to dim_customer and filter dim_customer.customer_type_code = 'Retail'."
+  },
+  "Point-in-Time Attribute": {
+    "aliases": [
+      "as of origination",
+      "historical attribute",
+      "attribute at booking",
+      "zeitpunktbezogen"
+    ],
+    "description": "A dimension attribute as it was valid for a fact row at the business event time.",
+    "formula": "Use the historized surrogate key already stored on the fact row.",
+    "date_basis": "Use the event date only for filtering the cohort, not for rejoining current dimension records.",
+    "eligible_tables": [
+      "dim_customer",
+      "dim_dealer",
+      "fact_leasing_contracts",
+      "fact_loan_contracts",
+      "fact_banking_accounts"
+    ],
+    "notes": "Do not filter is_current_record when the question asks for attributes at origination, booking, or snapshot time. Leasing and loan fact tables already store the historized dealer_sk and customer_sk valid at booking/origination; use those surrogate keys directly for point-in-time dealer or customer attributes such as dealer risk rating valid at origination."
+  },
+  "Residual Value Gap": {
+    "aliases": [
+      "residual value difference",
+      "rv gap",
+      "restwertluecke"
+    ],
+    "description": "Difference between nominal and effective residual value for leasing contracts.",
+    "formula": "fact_leasing_contracts.residual_value_nominal - fact_leasing_contracts.residual_value_effective",
+    "date_basis": "Use maturity or contract start date according to the question.",
+    "eligible_tables": [
+      "fact_leasing_contracts"
+    ],
+    "notes": "Positive values mean nominal residual value exceeds effective residual value."
+  },
+  "Returned Refinanced Vehicle": {
+    "aliases": [
+      "refinanced returned vehicle",
+      "returned vehicles in active contracts",
+      "successfully ended returned lease"
+    ],
+    "description": "Vehicles from successfully ended leasing contracts that were returned and are currently present in an active financing contract.",
+    "formula": "Count returned fact_leasing_contracts rows with closed non-defaulted status and actual_end_date_sk in the requested period where the same vehicle_sk appears in any active leasing or loan contract.",
+    "date_basis": "Use fact_leasing_contracts.actual_end_date_sk for the ended lease period; use current contract_status_sk joined to dim_contract_status for active follow-up contracts.",
+    "eligible_tables": [
+      "fact_leasing_contracts",
+      "fact_loan_contracts",
+      "dim_contract_status",
+      "dim_date"
+    ],
+    "notes": "Do not require the active follow-up contract to have the same customer. Do not require termination_reason_code unless the question explicitly asks for a specific termination reason. A successfully ended lease is closed and not defaulted, with vehicle_return_date_sk populated."
+  },
+  "Newly Financed Vehicle After Early Lease End": {
+    "aliases": [
+      "newly financed vehicle models after early lease end",
+      "newly financed vehicle models after customers previously ended a lease early",
+      "new loan after early lease termination",
+      "previously ended a lease early"
+    ],
+    "description": "Vehicle models financed by new loan contracts after the same customer previously ended a lease early.",
+    "formula": "Match fact_loan_contracts to earlier fact_leasing_contracts for the same customer where old lease early_termination_flag = TRUE and old actual_end_date precedes loan origination date.",
+    "date_basis": "Compare fact_leasing_contracts.actual_end_date_sk with fact_loan_contracts.origination_date_sk.",
+    "eligible_tables": [
+      "fact_leasing_contracts",
+      "fact_loan_contracts",
+      "dim_vehicle",
+      "dim_date"
+    ],
+    "notes": "Newly financed means a new loan contract in this benchmark context, not a later lease. Count the vehicle model on the new loan contract."
+  },
+  "Stornoquote": {
+    "aliases": [
+      "cancellation rate",
+      "cancelled contract share",
+      "storno rate"
+    ],
+    "description": "Share of cancelled contracts among all considered contracts.",
+    "formula": "COUNT(CASE WHEN dim_contract_status.is_cancelled_flag THEN 1 END) / COUNT(contract_id)",
+    "date_basis": "Use the period requested by the question.",
+    "eligible_tables": [
+      "fact_leasing_contracts",
+      "fact_loan_contracts"
+    ],
+    "exclusions": [
+      "Contracts cancelled before becoming effective, for example same-day cancellation before activation."
+    ],
+    "notes": "Join fact_leasing_contracts or fact_loan_contracts to dim_contract_status via contract_status_sk."
+  },
+  "Successful Payment": {
+    "aliases": [
+      "successfully received",
+      "settled payment",
+      "erfolgreicher zahlungseingang"
+    ],
+    "description": "A booked payment transaction that has not itself been flagged as a reversal.",
+    "formula": "fact_payment_transactions.is_reversal_flag = FALSE",
+    "date_basis": "Use value_date_sk for cash receipt timing.",
+    "eligible_tables": [
+      "fact_payment_transactions"
+    ],
+    "notes": "Successful receipt questions filter to is_reversal_flag = FALSE and do not subtract reversal rows. Use reversal rows only when the question explicitly asks for reversal rates, signed reversal rows, or accounting after reversals."
+  },
+  "Vintage": {
+    "aliases": [
+      "origination cohort",
+      "booking cohort",
+      "jahrgang"
+    ],
+    "description": "A cohort grouped by the period in which a contract was originated or booked.",
+    "formula": "Group by the requested origination, start, or booking date dimension.",
+    "date_basis": "Use origination_date_sk for loans, contract_start_date_sk for leasing, and booking_date_sk only when explicitly requested.",
+    "eligible_tables": [
+      "fact_leasing_contracts",
+      "fact_loan_contracts"
+    ],
+    "notes": "Do not group by maturity date for vintage analysis."
+  }
+}
